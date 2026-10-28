@@ -8,11 +8,19 @@ import { BadRequestException, NotFoundException } from '../exceptions/error.exce
 import { RoleEnum } from '../enum/enum.gender.js';
 import { TokenTypeEnum } from '../enum/security.enum.js';
 import { comparePassword } from './hash.security.js';
+import { randomUUID } from 'crypto';
+import { exist, set } from '../services/cache.service.js';
+import { UnauthorizedExecution as UnauthorizedException } from '../exceptions/error.exception.js';
 
 
 
+export const userBaseRevokedTokenKey=({userId})=>{
+    return `User::${userId.toString()}::Revoke_Token`
+}
 
-
+export const userRevokedTokenKey=({userId,jti})=>{
+    return `${userBaseRevokedTokenKey({userId})}::${jti}`
+}
 
 
 export const createToken=async({payload={} , options={},secret=ACCESS_USER_TOKEN_SIGNING}={})=>{
@@ -71,9 +79,20 @@ const payload=await verifyToken({token:authorization, secret: await getSignature
 if(!payload?.sub){
     throw BadRequestException('missing Token payload')
 }
+
+if(await exist({key:userRevokedTokenKey({userId:payload.sub, jti:payload.jti})})){
+    throw UnauthorizedException('Expired login credentials ')
+}
+
+
+
 const user=await findById({model:UserModel, id:payload.sub})
 if(!user){
     throw NotFoundException('invaild account')
+}
+
+if(user.changeCreadentialsTime?.getTime()?? 0 > payload.iat * 1000){
+    throw UnauthorizedException('Expired login credentials ')
 }
 return {user, payload}
 }
@@ -82,6 +101,7 @@ return {user, payload}
 
 export const createLoginCredentials = async ({user, issuer, options = {}}) => {
     const { accessSignature, refreshSignature } = await getTokenSignatures({ role:user.role })
+    const jwtid=randomUUID();
     const access_token = await createToken({
       payload:{sub:user._id},
         secret: accessSignature,
@@ -89,7 +109,8 @@ export const createLoginCredentials = async ({user, issuer, options = {}}) => {
             ...options,
             ...(issuer ? { issuer } : {}),
             audience: [user.role],
-            expiresIn: ACCESS_TOKEN_EXPIRES_IN
+            expiresIn: ACCESS_TOKEN_EXPIRES_IN,
+            jwtid
         }
     })
     const refresh_token = await createToken({
@@ -99,12 +120,28 @@ export const createLoginCredentials = async ({user, issuer, options = {}}) => {
             ...options,
             ...(issuer ? { issuer } : {}),
             audience: [user.role],
-            expiresIn: REFRESH_TOKEN_EXPIRES_IN
+            expiresIn: REFRESH_TOKEN_EXPIRES_IN,
+            jwtid
         }, 
     })
     return { access_token, refresh_token }
 }
 
+
+
+
+
+
+
+export const createRevokeToken=async({payload})=>{
+     const consumedTime = (Math.ceil(Date.now() / 1000) - payload.iat);
+    const refreshExpiresIn = payload.iat + REFRESH_TOKEN_EXPIRES_IN;
+    const ttl = refreshExpiresIn - consumedTime;
+    console.log({ payload, consumedTime, refreshExpiresIn, ttl });
+    await set({ key: userRevokedTokenKey({ userId: payload.sub, jti: payload.jti }), value: payload.jti, ttl });
+    return;
+
+}
 
 
 
@@ -123,5 +160,4 @@ export const basicAuth = async ({ email, password }) => {
     if (!match) return NotFoundException("not Exist")
     return user
 }
-
 

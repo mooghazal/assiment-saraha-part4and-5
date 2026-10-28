@@ -57,10 +57,8 @@ const userSchema=new mongoose.Schema({
     enum:Object.values(ProviderEnum),
     default:ProviderEnum.SYSTEM
    },
-
-
-
-    coverImage:[String]
+ coverImage:[String],
+ changeCreadentialsTime:Date
 
 
 }

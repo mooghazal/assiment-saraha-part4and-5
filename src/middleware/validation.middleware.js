@@ -13,9 +13,31 @@ export const validation = (schema) => {
                 validationResult.error.issues
             );
         }
-
         req.validate = validationResult.data;
-
         next();
     };
 };
+
+
+
+
+
+
+
+
+
+// export const validation=(scheme)=>{
+//     return (req,res,next)=>{
+//         const validationResult=scheme.safeParse(req.body)
+//         if(!validationResult.success){
+//             throw BadRequestException("validation Error",validationResult.error.issues)
+//         }
+//         req.validate=validationResult.data
+//         next()
+
+//     }
+
+// }
+
+
+
